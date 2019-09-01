@@ -4,47 +4,59 @@
 // CC BY-SA 4.0
 #include "usb_hid_keycodes.h"
 
-byte rowPins[] = {22, 24};
-byte colPins[] = {38, 40};
+byte ROW_PINS[] = {22, 24, 26, 28, 30, 32, 34, 36};
+byte COL_PINS[] = {38, 40, 42, 44, 46, 48, 50, 52};
 
-const int rowCount = sizeof(rowPins)/sizeof(rowPins[0]);
-const int colCount = sizeof(colPins)/sizeof(colPins[0]); 
-byte keys[colCount][rowCount];
+const int num_rows = sizeof(ROW_PINS)/sizeof(ROW_PINS[0]);
+const int num_cols = sizeof(COL_PINS)/sizeof(COL_PINS[0]); 
 
-byte scanCodes[][rowCount] = {
+byte SCAN_CODES[][num_cols] = {
   {KEY_Q, KEY_W},
   {KEY_A, KEY_S}
 };
 
+byte prevKeys[num_rows][num_cols];
+byte curKeys[num_rows][num_cols];
 
 void setup() {
     Serial.begin(115200);
  
-    for(int x=0; x<rowCount; x++) {
-        Serial.print(rowPins[x]); Serial.println(" as input");
-        pinMode(rowPins[x], INPUT);
+    for(int x=0; x<num_rows; x++) {
+        pinMode(ROW_PINS[x], INPUT);
     }
- 
-    for (int x=0; x<colCount; x++) {
-        Serial.print(colPins[x]); Serial.println(" as input-pullup");
-        pinMode(colPins[x], INPUT_PULLUP);
+    for (int x=0; x<num_cols; x++) {
+        pinMode(COL_PINS[x], INPUT_PULLUP);
     }
-         
+    for (int col_idx=0; col_idx < num_cols; col_idx++) {
+      for (int row_idx=0; row_idx < num_rows; row_idx++) {
+        prevKeys[row_idx][col_idx] = HIGH;
+        curKeys[row_idx][col_idx] = HIGH; 
+      }
+    }
+    Serial.println(matrixChanged());     
 }
- 
+
+void copyMatrix() {
+    for (int col_idx=0; col_idx < num_cols; col_idx++) {
+      for (int row_idx=0; row_idx < num_rows; row_idx++) {
+            prevKeys[row_idx][col_idx] = curKeys[row_idx][col_idx];
+      }
+    }
+  
+}
 void readMatrix() {
     // iterate the columns
-    for (int colIndex=0; colIndex < colCount; colIndex++) {
+    for (int col_idx=0; col_idx < num_cols; col_idx++) {
         // col: set to output to low
-        byte curCol = colPins[colIndex];
+        byte curCol = COL_PINS[col_idx];
         pinMode(curCol, OUTPUT);
         digitalWrite(curCol, LOW);
  
-        // row: interate through the rowPins
-        for (int rowIndex=0; rowIndex < rowCount; rowIndex++) {
-            byte rowCol = rowPins[rowIndex];
+        // row: interate through the ROW_PINS
+        for (int row_idx=0; row_idx < num_rows; row_idx++) {
+            byte rowCol = ROW_PINS[row_idx];
             pinMode(rowCol, INPUT_PULLUP);
-            keys[colIndex][rowIndex] = digitalRead(rowCol);
+            curKeys[row_idx][col_idx] = digitalRead(rowCol);
             pinMode(rowCol, INPUT);
         }
         // disable the column
@@ -52,17 +64,37 @@ void readMatrix() {
     }
 }
  
-void printMatrix() {
-    for (int colIndex=0; colIndex < colCount; colIndex++) {
-      for (int rowIndex=0; rowIndex < rowCount; rowIndex++) {
-            if (!keys[colIndex][rowIndex]) {
-              Serial.println(scanCodes[colIndex][rowIndex]);
-            }
-        }   
-    }
+void sendCode() {
+  for (int col_idx=0; col_idx < num_cols; col_idx++) {
+    for (int row_idx=0; row_idx < num_rows; row_idx++) {
+      if (prevKeys[row_idx][col_idx] == curKeys[row_idx][col_idx]) {
+        continue;
+      }
+      if (curKeys[row_idx][col_idx] == LOW) {
+        Serial.print("KeyDown ");
+      } else {
+        Serial.print("KeyUp ");
+      }
+      Serial.println(SCAN_CODES[row_idx][col_idx]);
+    }   
+  }
 }
- 
+
+bool matrixChanged() {
+  for (int col_idx=0; col_idx < num_cols; col_idx++) {
+    for (int row_idx=0; row_idx < num_rows; row_idx++) {
+      if (prevKeys[row_idx][col_idx] != curKeys[row_idx][col_idx]) {
+        return true;
+      }
+    }   
+  }
+  return false;  
+}
+
 void loop() {
-    readMatrix();
-    printMatrix();
+  readMatrix();
+  if (matrixChanged()) {
+    sendCode();
+    copyMatrix();
+  }
 }
