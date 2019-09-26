@@ -8,7 +8,7 @@
 
 byte ROW_PINS[] = {22, 24, 26, 28, 30, 32, 34, 36};
 byte COL_PINS[] = {38, 40, 42, 44, 46, 48, 50, 52};
-//byte IRQ_PIN = X;
+byte IRQ_PIN = 23;
 
 const int num_rows = sizeof(ROW_PINS)/sizeof(ROW_PINS[0]);
 const int num_cols = sizeof(COL_PINS)/sizeof(COL_PINS[0]); 
@@ -28,7 +28,6 @@ int num_changed_keys;
 
 void setup() {
     Serial.begin(115200);
-    Wire.begin(1);
  
     for(int x=0; x<num_rows; x++) {
         pinMode(ROW_PINS[x], INPUT);
@@ -36,6 +35,8 @@ void setup() {
     for (int x=0; x<num_cols; x++) {
         pinMode(COL_PINS[x], INPUT_PULLUP);
     }
+    pinMode(IRQ_PIN, OUTPUT);
+    digitalWrite(IRQ_PIN, LOW);
     for (int col_idx=0; col_idx < num_cols; col_idx++) {
       for (int row_idx=0; row_idx < num_rows; row_idx++) {
         prev_keys[row_idx][col_idx] = HIGH;
@@ -43,6 +44,9 @@ void setup() {
       }
     }
     zeroBuffer();
+    Wire.begin(0x42);
+    Wire.onRequest(requestEvent);
+
 }
 
 void copyMatrix() {
@@ -95,6 +99,9 @@ void sendCodes() {
         Serial.println("KeyUp ");
     }   
   }
+  if (num_changed_keys != 0) {
+    irq();
+  }
 }
 
 int findMatrixChanges() {
@@ -111,9 +118,19 @@ int findMatrixChanges() {
   }
 }
 
+void irq() {
+  digitalWrite(IRQ_PIN, HIGH);
+  digitalWrite(IRQ_PIN, LOW);    
+}
+
 void loop() {
   readMatrix();
   findMatrixChanges();
   sendCodes();
   copyMatrix();
+}
+
+void requestEvent() {
+  // send 32 bytes, always.
+  Wire.write("01234567890123456789012345678901"); 
 }
