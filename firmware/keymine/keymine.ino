@@ -9,20 +9,22 @@
 byte ROW_PINS[] = {22, 24, 26, 28, 30, 32, 34, 36};
 byte COL_PINS[] = {38, 40, 42, 44, 46, 48, 50, 52};
 byte IRQ_PIN = 23;
+int receiveBuffer[9];
 
 const int num_rows = sizeof(ROW_PINS)/sizeof(ROW_PINS[0]);
 const int num_cols = sizeof(COL_PINS)/sizeof(COL_PINS[0]); 
 
 byte SCAN_CODES[][num_cols] = {
-  {KEY_Q, KEY_W},
-  {KEY_A, KEY_S}
+  {KEY_Q, KEY_W, KEY_E},
+  {KEY_A, KEY_S, KEY_D},
+  {KEY_Z, KEY_X, KEY_C}
 };
 
 byte prev_keys[num_rows][num_cols];
 byte cur_keys[num_rows][num_cols];
 
-// Hosts the scan codes to send, and if it's key up (0) or key down (1)
-byte send_buf[num_rows*num_cols][2];
+byte send_buf[32];
+
 // How many changes we need to send
 int num_changed_keys;
 
@@ -43,9 +45,10 @@ void setup() {
         cur_keys[row_idx][col_idx] = HIGH;
       }
     }
-    zeroBuffer();
+    memset(send_buf, 0x00, 32);
     Wire.begin(0x42);
     Wire.onRequest(requestEvent);
+    Wire.onReceive(receiveData);
 
 }
 
@@ -79,58 +82,68 @@ void readMatrix() {
     }
 }
 
-void zeroBuffer() {
-  // zero the send buffer
-  num_changed_keys = 0;
-  for (int idx=0; idx < num_rows*num_cols; idx++) {
-    send_buf[idx][0] = 0;
-    send_buf[idx][1] = 0;
-  }
-}
-
 void sendCodes() {
   // send the keycode to the remote end.
-  for (int idx=0; idx < num_changed_keys; idx++) {
-    Serial.print(send_buf[idx][0]);
+  
+  for (int idx=0; idx < 16; idx++) {
+    if (send_buf[2*idx] == 0x00) {
+      continue;
+    }
+    Serial.print(send_buf[2*idx]);
     Serial.print(" ");
-    if (send_buf[idx][1] == 1) {
+    if (send_buf[2*idx+1] == 1) {
         Serial.println("KeyDown ");
     } else {
         Serial.println("KeyUp ");
     }   
   }
-  if (num_changed_keys != 0) {
-    irq();
-  }
+  irq();
 }
 
 int findMatrixChanges() {
-  zeroBuffer();
+  unsigned int num_changed_keys = 0;
+  memset(send_buf, 0x00, 32);
+
   // scan the matrixes for differences and appends the results to the send buffer
   for (int col_idx=0; col_idx < num_cols; col_idx++) {
     for (int row_idx=0; row_idx < num_rows; row_idx++) {
       if (prev_keys[row_idx][col_idx] != cur_keys[row_idx][col_idx]) {
-        send_buf[num_changed_keys][0] = SCAN_CODES[row_idx][col_idx];
-        send_buf[num_changed_keys][1] = (cur_keys[row_idx][col_idx] == LOW ? 1 : 0);
+        send_buf[2*num_changed_keys] = SCAN_CODES[row_idx][col_idx];
+        send_buf[2*num_changed_keys+1] = (cur_keys[row_idx][col_idx] == LOW ? 1 : 0);
         num_changed_keys++;
+        if (num_changed_keys == 16) goto exit;
       }
     }   
   }
+exit:
+  return num_changed_keys;
 }
 
 void irq() {
+  Serial.println("irq");
   digitalWrite(IRQ_PIN, HIGH);
   digitalWrite(IRQ_PIN, LOW);    
 }
 
 void loop() {
   readMatrix();
-  findMatrixChanges();
-  sendCodes();
+  if (findMatrixChanges()) {
+    sendCodes();
+  }
   copyMatrix();
 }
 
 void requestEvent() {
   // send 32 bytes, always.
-  Wire.write("01234567890123456789012345678901"); 
+  for (unsigned int i = 0; i< 32; i++) { Serial.print(send_buf[i]); Serial.print(' ');}
+  Serial.println(' ');
+  Wire.write(send_buf, 32);
+}
+
+void receiveData(int byteCount){
+  int counter = 0;
+  while(Wire.available()) {
+    receiveBuffer[counter] = Wire.read();
+    counter++;
+  }
 }
