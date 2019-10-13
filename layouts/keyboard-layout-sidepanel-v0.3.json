@@ -1,0 +1,50 @@
+[
+  {
+    "switchMount": "cherry",
+    "switchBrand": "cherry",
+    "switchType": "MX1A-C1xx",
+    "plate": true
+  },
+  [
+    {
+      "a": 7
+    },
+    "",
+    "",
+    ""
+  ],
+  [
+    {
+      "f": 6
+    },
+    "",
+    "",
+    ""
+  ],
+  [
+    "",
+    "",
+    ""
+  ],
+  [
+    "",
+    {
+      "sm": "cherry",
+      "sb": "cherry",
+      "st": "MX1A-C1xx"
+    },
+    "",
+    ""
+  ],
+  [
+    {
+      "f": 3
+    },
+    "",
+    {
+      "f": 5
+    },
+    "",
+    ""
+  ]
+]
