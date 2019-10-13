@@ -23,10 +23,17 @@ byte SCAN_CODES[][num_cols] = {
 byte prev_keys[num_rows][num_cols];
 byte cur_keys[num_rows][num_cols];
 
-byte send_buf[32];
-
-// How many changes we need to send
-int num_changed_keys;
+// Send buffer and number of changed keys to send to the remote end.
+// While making volatile an array will make volatile only the pointer to the array probably,
+// it's better safe than sorry. I am unsure how this works at the lower level.
+// Note that some time may pass between the interrupt is issued and the master come and read
+// the content, so what we want to do is to only push to this buffer when num_changed_keys
+// is zero. If it's not zero, it means that there are pending data to be sent, and we will
+// simply throw away the changeset. At least for now. In other words, we must ensure atomic
+// operations on num_changed_keys and use it as a flag.
+volatile byte send_buf[32];
+volatile unsigned int num_changed_keys;
+volatile unsigned int watchdog;
 
 void setup() {
     Serial.begin(115200);
@@ -45,7 +52,8 @@ void setup() {
         cur_keys[row_idx][col_idx] = HIGH;
       }
     }
-    memset(send_buf, 0x00, 32);
+    watchdog = 0;
+    memset((byte *)send_buf, 0x00, 32*sizeof(byte));
     Wire.begin(0x42);
     Wire.onRequest(requestEvent);
     Wire.onReceive(receiveData);
@@ -82,62 +90,75 @@ void readMatrix() {
     }
 }
 
-void sendCodes() {
-  // send the keycode to the remote end.
-  
-  for (int idx=0; idx < 16; idx++) {
-    if (send_buf[2*idx] == 0x00) {
-      continue;
-    }
-    Serial.print(send_buf[2*idx]);
-    Serial.print(" ");
-    if (send_buf[2*idx+1] == 1) {
-        Serial.println("KeyDown ");
-    } else {
-        Serial.println("KeyUp ");
-    }   
+void signalMaster() {
+  // Report the master that we have something to read, but only if we have space for it.
+  noInterrupts();
+  if (num_changed_keys) {
+    irq();
   }
-  irq();
+  interrupts();
 }
 
-int findMatrixChanges() {
-  unsigned int num_changed_keys = 0;
-  memset(send_buf, 0x00, 32);
-
-  // scan the matrixes for differences and appends the results to the send buffer
+int packChanges() {
+  unsigned int nchanged = 0;
+  char buf[32];
+  memset(buf, 0x00, 32*sizeof(byte));
+  
+  // scan the matrixes for ditfferences and appends the results to the send buffer
   for (int col_idx=0; col_idx < num_cols; col_idx++) {
     for (int row_idx=0; row_idx < num_rows; row_idx++) {
       if (prev_keys[row_idx][col_idx] != cur_keys[row_idx][col_idx]) {
-        send_buf[2*num_changed_keys] = SCAN_CODES[row_idx][col_idx];
-        send_buf[2*num_changed_keys+1] = (cur_keys[row_idx][col_idx] == LOW ? 1 : 0);
-        num_changed_keys++;
-        if (num_changed_keys == 16) goto exit;
+        buf[2*nchanged] = SCAN_CODES[row_idx][col_idx];
+        buf[2*nchanged+1] = (cur_keys[row_idx][col_idx] == LOW ? 1 : 0);
+        nchanged++;
+        if (nchanged == 16) goto exit;
       }
     }   
   }
 exit:
-  return num_changed_keys;
+  // if we don't have space in the buffer because the master hasn't retrieved it yet
+  // we have no other choice but to throw the events away.
+  if (num_changed_keys) {
+    Serial.println("Throwing away buffer");
+    watchdog++;
+    if ((watchdog % 3) == 0) {
+      Serial.println("Resetting");
+      noInterrupts();
+      // copy the local buffer into the send buffer as an atomic operation
+      memcpy((byte *)send_buf, buf, 32*sizeof(byte));
+      num_changed_keys = nchanged;
+      interrupts();  
+    }
+    return 0;
+  }
+
+  if (nchanged) {
+    noInterrupts();
+    // copy the local buffer into the send buffer as an atomic operation
+    memcpy((byte *)send_buf, buf, 32*sizeof(byte));
+    num_changed_keys = nchanged;
+    interrupts();
+    
+  }
+  return nchanged;
 }
 
 void irq() {
-  Serial.println("irq");
   digitalWrite(IRQ_PIN, HIGH);
   digitalWrite(IRQ_PIN, LOW);    
 }
 
-void loop() {
-  readMatrix();
-  if (findMatrixChanges()) {
-    sendCodes();
-  }
-  copyMatrix();
-}
-
 void requestEvent() {
-  // send 32 bytes, always.
-  for (unsigned int i = 0; i< 32; i++) { Serial.print(send_buf[i]); Serial.print(' ');}
-  Serial.println(' ');
-  Wire.write(send_buf, 32);
+  // this is an ISR so interrupts are already disabled.
+  byte buf[32];
+  // Wire.write wants a const uint_t, so we copy the volatile data in the local stack
+  memcpy(buf, (byte *)send_buf, 32*sizeof(byte));
+  
+  // send 32 bytes, always. The master is waiting for them.  
+  Wire.write(buf, 32);
+  // mark the buffer as sent.
+  memset((byte *)send_buf, 0x00, 32*sizeof(byte));
+  num_changed_keys = 0;
 }
 
 void receiveData(int byteCount){
@@ -146,4 +167,12 @@ void receiveData(int byteCount){
     receiveBuffer[counter] = Wire.read();
     counter++;
   }
+}
+
+void loop() {
+  readMatrix();
+  if (packChanges()) {
+    signalMaster();
+  }
+  copyMatrix();
 }
