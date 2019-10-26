@@ -9,8 +9,14 @@ GPIO.setup(4, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 bus = smbus.SMBus(1)
 address = 0x42
 
+scans = 0
+fails = 0
+
 def callback(channel):
-    data = bus.read_i2c_block_data(address, 0x00, 32)
+    try:
+        data = bus.read_i2c_block_data(address, 0x00, 32)
+    except Exception as e:
+        return
     print(data)
 
 
