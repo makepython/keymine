@@ -115,30 +115,31 @@ int packChanges() {
       }
     }   
   }
+  
 exit:
-  // if we don't have space in the buffer because the master hasn't retrieved it yet
-  // we have no other choice but to throw the events away.
-  if (num_changed_keys) {
-    Serial.println("Throwing away buffer");
-    watchdog++;
-    if ((watchdog % 3) == 0) {
-      Serial.println("Resetting");
-      noInterrupts();
-      // copy the local buffer into the send buffer as an atomic operation
-      memcpy((byte *)send_buf, buf, 32*sizeof(byte));
-      num_changed_keys = nchanged;
-      interrupts();  
-    }
-    return 0;
-  }
-
+//  // if we don't have space in the buffer because the master hasn't retrieved it yet
+//  // we have no other choice but to throw the events away.
+//  if (num_changed_keys) {
+//    Serial.println("Throwing away buffer");
+//    watchdog++;
+//    if ((watchdog % 3) == 0) {
+//      Serial.println("Resetting");
+//      noInterrupts();
+//      // copy the local buffer into the send buffer as an atomic operation
+//      memcpy((byte *)send_buf, buf, 32*sizeof(byte));
+//      num_changed_keys = nchanged;
+//      interrupts();  
+//    }
+//    return 0;
+//  }
+//
   if (nchanged) {
-    noInterrupts();
+//    noInterrupts();
     // copy the local buffer into the send buffer as an atomic operation
     memcpy((byte *)send_buf, buf, 32*sizeof(byte));
     num_changed_keys = nchanged;
-    interrupts();
-    
+//    interrupts();
+//    
   }
   return nchanged;
 }
@@ -173,6 +174,6 @@ void loop() {
   readMatrix();
   if (packChanges()) {
     signalMaster();
+    copyMatrix();
   }
-  copyMatrix();
 }
