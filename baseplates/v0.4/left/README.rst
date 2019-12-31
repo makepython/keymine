@@ -5,7 +5,9 @@ Stabilizer: costar only
 Case type: Sandwich
 Mount holes: 8, diameter 3.2 mm (for M3 screws), width of material: 8 mm
 Edge padding: 10 mm all sides.
+plate corners: 3 mm
+
 
 Result:
 
-- Width: 224.788mm,  Height: 115.250mm
+- Width: 224.789mm,  Height: 115.252mm
